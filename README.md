@@ -15,7 +15,7 @@ export ANDROID_HOME=/path/to/your/android/sdk
 Download the following assets to `app/src/main/assets`:
 
 ```
-curl -LO https://huggingface.co/second-state/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q5_K_M.gguf app/src/main/assets
+curl -LO https://huggingface.co/second-state/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf app/src/main/assets
 curl -LO https://github.com/LlamaEdge/LlamaEdge/releases/download/0.24.0/llama-api-server.wasm app/src/main/assets
 ```
 
