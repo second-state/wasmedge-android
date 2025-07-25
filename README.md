@@ -12,22 +12,10 @@ export ANDROID_HOME=/path/to/your/android/sdk
 
 ## Download Assets
 
-Download the following assets to `app/src/main/assets`:
+Download the following assets to `app/src/main/assets` :
 
 ```
-curl -LO https://huggingface.co/second-state/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf app/src/main/assets
-curl -LO https://github.com/LlamaEdge/LlamaEdge/releases/download/0.24.0/llama-api-server.wasm app/src/main/assets
-```
-
-## Build the WasmEdge WASI-NN Plugin
-
-We need to build the WasmEdge WASI-NN plugin to use it in the Android project. After building the plugin, copy the `libwasmedgePluginWasiNN.so` file to the assets directory.
-
-```
-./gradlew assembleDebug
-cp -f \
-  ./lib/build/intermediates/library_jni/debug/jni/arm64-v8a/libwasmedgePluginWasiNN.so \
-  ./app/src/main/assets/libwasmedgePluginWasiNN.so
+curl -LO https://huggingface.co/second-state/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf app/src/main/assets/llamaedge/
 ```
 
 ## Build the Android App
@@ -41,3 +29,9 @@ cp -f \
 ```
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
+
+## Run the App
+
+After launching the app, you can open the browser and navigate to `http://localhost:8080` to interact with the Chatbot UI.
+
+![Screen Recording](files/ScreenRecording.gif)
