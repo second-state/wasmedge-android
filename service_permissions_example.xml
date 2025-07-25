@@ -1,0 +1,24 @@
+<!-- Optional: Add this permission if you want to restrict access to your service -->
+<permission 
+    android:name="com.example.wasmedge_android_cli.WASMEDGE_SERVICE_PERMISSION"
+    android:label="Access WasmEdge Service"
+    android:description="Allows apps to control the WasmEdge API server"
+    android:protectionLevel="normal" />
+
+<!-- If using the permission above, add this to the service declaration -->
+<!--
+<service
+    android:name=".WasmEdgeService"
+    android:exported="true"
+    android:enabled="true"
+    android:permission="com.example.wasmedge_android_cli.WASMEDGE_SERVICE_PERMISSION">
+    <intent-filter>
+        <action android:name="com.example.wasmedge_android_cli.WASMEDGE_SERVICE" />
+    </intent-filter>
+</service>
+-->
+
+<!-- Client apps would then need to declare this permission -->
+<!--
+<uses-permission android:name="com.example.wasmedge_android_cli.WASMEDGE_SERVICE_PERMISSION" />
+-->

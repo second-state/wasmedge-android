@@ -25,6 +25,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        
+        <service
+            android:name=".WasmEdgeService"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.example.wasmedge_android_cli.WASMEDGE_SERVICE" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

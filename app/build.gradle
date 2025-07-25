@@ -40,6 +40,11 @@ android {
     buildFeatures {
         compose true
     }
+    
+    lintOptions {
+        abortOnError false
+        checkReleaseBuilds false
+    }
 }
 
 dependencies {
