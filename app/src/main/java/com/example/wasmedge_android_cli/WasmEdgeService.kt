@@ -11,14 +11,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class WasmEdgeService : Service() {
     
-    private val binder = WasmEdgeBinder()
     private var process: Process? = null
     private var serviceJob: Job? = null
     private val isRunning = AtomicBoolean(false)
     private var currentStatus = "Stopped"
     private var serverPort = 8080
     
-    inner class WasmEdgeBinder : Binder(), IWasmEdgeServiceInterface {
+    private val binder = object : IWasmEdgeServiceStub() {
         
         override fun startApiServer(): Boolean {
             return startApiServerWithParams(
@@ -35,52 +34,23 @@ class WasmEdgeService : Service() {
             contextSize: Int,
             port: Int
         ): Boolean {
-            if (isRunning.get()) {
-                Log.w("WasmEdgeService", "API server is already running")
-                return false
-            }
-            
-            return try {
-                serverPort = port
-                serviceJob = CoroutineScope(Dispatchers.IO).launch {
-                    executeWasmEdgeProcess(modelFile, templateType, contextSize, port)
-                }
-                true
-            } catch (e: Exception) {
-                Log.e("WasmEdgeService", "Failed to start API server: ${e.message}")
-                false
-            }
+            return this@WasmEdgeService.startApiServerWithParamsImpl(modelFile, templateType, contextSize, port)
         }
         
         override fun stopApiServer(): Boolean {
-            return try {
-                if (isRunning.get()) {
-                    process?.destroy()
-                    serviceJob?.cancel()
-                    isRunning.set(false)
-                    currentStatus = "Stopped"
-                    Log.i("WasmEdgeService", "API server stopped")
-                    true
-                } else {
-                    Log.w("WasmEdgeService", "API server is not running")
-                    false
-                }
-            } catch (e: Exception) {
-                Log.e("WasmEdgeService", "Failed to stop API server: ${e.message}")
-                false
-            }
+            return this@WasmEdgeService.stopApiServerImpl()
         }
         
         override fun isApiServerRunning(): Boolean {
-            return isRunning.get()
+            return this@WasmEdgeService.isApiServerRunningImpl()
         }
         
         override fun getApiServerStatus(): String {
-            return currentStatus
+            return this@WasmEdgeService.getApiServerStatusImpl()
         }
         
         override fun getServerPort(): Int {
-            return if (isRunning.get()) serverPort else -1
+            return this@WasmEdgeService.getServerPortImpl()
         }
     }
     
@@ -97,7 +67,66 @@ class WasmEdgeService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d("WasmEdgeService", "Service destroyed")
-        binder.stopApiServer()
+        try {
+            stopApiServerImpl()
+        } catch (e: Exception) {
+            Log.e("WasmEdgeService", "Error stopping service: ${e.message}")
+        }
+    }
+    
+    // Implementation methods for the service
+    private fun startApiServerWithParamsImpl(
+        modelFile: String,
+        templateType: String,
+        contextSize: Int,
+        port: Int
+    ): Boolean {
+        if (isRunning.get()) {
+            Log.w("WasmEdgeService", "API server is already running")
+            return false
+        }
+        
+        return try {
+            serverPort = port
+            serviceJob = CoroutineScope(Dispatchers.IO).launch {
+                executeWasmEdgeProcess(modelFile, templateType, contextSize, port)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("WasmEdgeService", "Failed to start API server: ${e.message}")
+            false
+        }
+    }
+    
+    private fun stopApiServerImpl(): Boolean {
+        return try {
+            if (isRunning.get()) {
+                process?.destroy()
+                serviceJob?.cancel()
+                isRunning.set(false)
+                currentStatus = "Stopped"
+                Log.i("WasmEdgeService", "API server stopped")
+                true
+            } else {
+                Log.w("WasmEdgeService", "API server is not running")
+                false
+            }
+        } catch (e: Exception) {
+            Log.e("WasmEdgeService", "Failed to stop API server: ${e.message}")
+            false
+        }
+    }
+    
+    private fun isApiServerRunningImpl(): Boolean {
+        return isRunning.get()
+    }
+    
+    private fun getApiServerStatusImpl(): String {
+        return currentStatus
+    }
+    
+    private fun getServerPortImpl(): Int {
+        return if (isRunning.get()) serverPort else -1
     }
     
     private fun copyFilesFromAssetsToInternal() {
