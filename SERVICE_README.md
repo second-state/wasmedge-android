@@ -5,14 +5,14 @@ This project provides a bounded service that allows other Android applications t
 ## Features
 
 - **Bounded Service**: Other apps can bind to the WasmEdge service and control it remotely
-- **Simple Interface**: Clean Kotlin interface for inter-process communication
+- **AIDL-style Interface**: Proper inter-process communication using custom Binder implementation
 - **API Server Control**: Start/stop the WasmEdge API server with custom parameters
 - **Status Monitoring**: Get real-time status and port information
 - **Process Management**: Proper lifecycle management of the WasmEdge subprocess
 
 ## Service Interface
 
-The service exposes the following methods through the `IWasmEdgeServiceInterface`:
+The service exposes the following methods through the `IWasmEdgeService` interface:
 
 ### Methods
 
@@ -25,71 +25,94 @@ The service exposes the following methods through the `IWasmEdgeServiceInterface
 
 ## Using the Service in Your App
 
-### 1. Copy the Interface
+### 1. Copy the Interface Files
 
-Copy the `IWasmEdgeServiceInterface.kt` file to your project:
+Copy both `IWasmEdgeService.java` and `IWasmEdgeServiceStub.java` files to your project:
 
-```kotlin
-interface IWasmEdgeServiceInterface {
-    fun startApiServer(): Boolean
-    fun startApiServerWithParams(modelFile: String, templateType: String, contextSize: Int, port: Int): Boolean
-    fun stopApiServer(): Boolean
-    fun isApiServerRunning(): Boolean
-    fun getApiServerStatus(): String
-    fun getServerPort(): Int
+**IWasmEdgeService.java:**
+```java
+package com.example.wasmedge_android_cli;
+
+import android.os.IInterface;
+import android.os.RemoteException;
+
+public interface IWasmEdgeService extends IInterface {
+    boolean startApiServer() throws RemoteException;
+    boolean startApiServerWithParams(String modelFile, String templateType, int contextSize, int port) throws RemoteException;
+    boolean stopApiServer() throws RemoteException;
+    boolean isApiServerRunning() throws RemoteException;
+    String getApiServerStatus() throws RemoteException;
+    int getServerPort() throws RemoteException;
 }
 ```
 
+**Note:** You also need to copy `IWasmEdgeServiceStub.java` which contains the Binder implementation.
+
 ### 2. Connect to the Service
 
-```kotlin
-class YourActivity : ComponentActivity() {
-    private var wasmEdgeService: IWasmEdgeServiceInterface? = null
-    private var isBound = false
+```java
+public class YourActivity extends ComponentActivity {
+    private IWasmEdgeService wasmEdgeService;
+    private boolean isBound = false;
     
-    private val serviceConnection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            wasmEdgeService = service as? IWasmEdgeServiceInterface
-            isBound = true
-            Log.d("YourApp", "WasmEdge service connected")
+    private ServiceConnection serviceConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            wasmEdgeService = IWasmEdgeServiceStub.asInterface(service);
+            isBound = true;
+            Log.d("YourApp", "WasmEdge service connected");
         }
         
-        override fun onServiceDisconnected(name: ComponentName?) {
-            wasmEdgeService = null
-            isBound = false
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            wasmEdgeService = null;
+            isBound = false;
         }
-    }
+    };
     
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
         
         // Bind to the service
-        val intent = Intent().apply {
-            component = ComponentName(
-                "com.example.wasmedge_android_cli",
-                "com.example.wasmedge_android_cli.WasmEdgeService"
-            )
+        Intent intent = new Intent();
+        intent.setComponent(new ComponentName(
+            "com.example.wasmedge_android_cli",
+            "com.example.wasmedge_android_cli.WasmEdgeService"
+        ));
+        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE);
+    }
+    
+    private void startServer() {
+        try {
+            if (wasmEdgeService != null) {
+                wasmEdgeService.startApiServer();
+            }
+        } catch (RemoteException e) {
+            Log.e("YourApp", "Error starting server: " + e.getMessage());
         }
-        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }
     
-    private fun startServer() {
-        wasmEdgeService?.startApiServer()
+    private void startServerWithCustomParams() {
+        try {
+            if (wasmEdgeService != null) {
+                wasmEdgeService.startApiServerWithParams(
+                    "your-model.gguf",
+                    "your-template",
+                    2048,
+                    8081
+                );
+            }
+        } catch (RemoteException e) {
+            Log.e("YourApp", "Error starting server with params: " + e.getMessage());
+        }
     }
     
-    private fun startServerWithCustomParams() {
-        wasmEdgeService?.startApiServerWithParams(
-            "your-model.gguf",
-            "your-template",
-            2048,
-            8081
-        )
-    }
-    
-    override fun onDestroy() {
-        super.onDestroy()
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
         if (isBound) {
-            unbindService(serviceConnection)
+            unbindService(serviceConnection);
         }
     }
 }
