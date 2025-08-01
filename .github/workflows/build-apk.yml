@@ -1,0 +1,97 @@
+name: Build APK (Reusable)
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r28c
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Cache WasmEdge build
+        uses: actions/cache@v4
+        with:
+          path: WasmEdge/build
+          key: ${{ runner.os }}-wasmedge-${{ hashFiles('WasmEdge/**') }}
+          restore-keys: |
+            ${{ runner.os }}-wasmedge-
+
+      - name: Cache LLM model
+        uses: actions/cache@v4
+        id: cache-llm-model
+        with:
+          path: app/src/main/assets/llamaedge/gemma-3-1b-it-Q4_K_M.gguf
+          key: llm-model-gemma-3-1b-it-Q4_K_M
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+
+      - name: Build WasmEdge
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          cd WasmEdge
+          cmake -Bbuild \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWASMEDGE_USE_LLVM=OFF \
+            -DWASMEDGE_PLUGIN_WASI_NN_BACKEND=GGML \
+            -DWASMEDGE_PLUGIN_WASI_NN_GGML_LLAMA_NATIVE=OFF \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-28 \
+            .
+          cmake --build build
+
+      - name: Copy WasmEdge assets
+        run: |
+          mkdir -p app/src/main/assets/llamaedge/
+          cp WasmEdge/build/tools/wasmedge/wasmedge app/src/main/assets/llamaedge/
+          cp WasmEdge/build/plugins/wasi_nn/libwasmedgePluginWasiNN.so app/src/main/assets/llamaedge/
+          cp WasmEdge/build/lib/api/libwasmedge.so app/src/main/assets/llamaedge/
+
+      - name: Download LLM model
+        if: steps.cache-llm-model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p app/src/main/assets/llamaedge/
+          cd app/src/main/assets/llamaedge/
+          curl -LO https://huggingface.co/second-state/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf
+
+      - name: Build APK
+        run: ./gradlew assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-apk
+          path: app/build/outputs/apk/debug/app-debug.apk

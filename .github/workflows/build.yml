@@ -1,0 +1,28 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-apk.yml
+
+  upload-artifact:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: built-apk
+          path: ./
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasmedge-android-apk
+          path: app-debug.apk
+          retention-days: 30
