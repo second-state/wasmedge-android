@@ -3,10 +3,12 @@ package com.example.wasmedge_android_cli
 import android.app.Service
 import android.content.Intent
 import android.os.Binder
+import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import kotlinx.coroutines.*
 import java.io.*
+import java.lang.reflect.Field
 import java.util.concurrent.atomic.AtomicBoolean
 
 class WasmEdgeService : Service() {
@@ -97,18 +99,43 @@ class WasmEdgeService : Service() {
             false
         }
     }
-    
+
+    private fun getProcessId(process: Process): Int {
+        return try {
+            val field: Field = process.javaClass.getDeclaredField("pid")
+            field.isAccessible = true
+            field.getInt(process)
+        } catch (e: Exception) {
+            Log.e("WasmEdgeService", "Failed to get PID by reflection", e)
+            -1
+        }
+    }
+
     private fun stopApiServerImpl(): Boolean {
         return try {
-            if (isRunning.get()) {
-                process?.destroy()
+            if (isRunning.get() && process != null) {
+                val pid = getProcessId(process!!)
+                if (pid != -1) {
+                    Log.i("WasmEdgeService", "Attempting to kill process with PID: $pid")
+                    Runtime.getRuntime().exec("kill -9 $pid").waitFor()
+                } else {
+                    Log.w("WasmEdgeService", "Could not get PID, falling back to destroy()")
+                    process?.destroy()
+                }
                 serviceJob?.cancel()
+                // Brief delay to allow the OS to release the port
+                try {
+                    Thread.sleep(500)
+                } catch (ie: InterruptedException) {
+                    // Restore the interrupted status
+                    Thread.currentThread().interrupt()
+                }
                 isRunning.set(false)
                 currentStatus = "Stopped"
                 Log.i("WasmEdgeService", "API server stopped")
                 true
             } else {
-                Log.w("WasmEdgeService", "API server is not running")
+                Log.w("WasmEdgeService", "API server is not running or process is null")
                 false
             }
         } catch (e: Exception) {
