@@ -12,6 +12,10 @@ import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.Process
+import android.os.SystemClock
+import android.app.AlarmManager
+import android.net.wifi.WifiManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
@@ -32,8 +36,10 @@ class WasmEdgeService : Service() {
     
     // Wake lock support
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
     private var isWakeLockHeld = AtomicBoolean(false)
     private lateinit var powerManager: PowerManager
+    private lateinit var wifiManager: WifiManager
     private lateinit var sharedPreferences: SharedPreferences
     
     companion object {
@@ -102,11 +108,18 @@ class WasmEdgeService : Service() {
         super.onCreate()
         Log.d("WasmEdgeService", "Service created")
         
-        // Initialize PowerManager and SharedPreferences
+        // Set process priority to foreground
+        Process.setThreadPriority(Process.THREAD_PRIORITY_FOREGROUND)
+        
+        // Initialize managers and preferences
         powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         
         createNotificationChannel()
+        
+        // Start foreground immediately to prevent ANR
+        startForeground(NOTIFICATION_ID, createNotification("Initializing..."))
         
         // Restore wake lock state from preferences
         if (sharedPreferences.getBoolean(PREF_WAKE_LOCK, false)) {
@@ -150,6 +163,7 @@ class WasmEdgeService : Service() {
             stopProcessMonitoring()
             stopApiServerImpl()
             releaseWakeLock()
+            releaseWifiLock()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
             } else {
@@ -158,6 +172,25 @@ class WasmEdgeService : Service() {
         } catch (e: Exception) {
             Log.e("WasmEdgeService", "Error stopping service: ${e.message}")
         }
+    }
+    
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Log.w("WasmEdgeService", "Task removed, scheduling restart...")
+        
+        // Schedule service restart using AlarmManager
+        val restartServiceIntent = Intent(applicationContext, WasmEdgeService::class.java)
+        val restartServicePendingIntent = PendingIntent.getService(
+            this, 1, restartServiceIntent,
+            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
+        val alarmService = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        alarmService.setExact(
+            AlarmManager.ELAPSED_REALTIME_WAKEUP,
+            SystemClock.elapsedRealtime() + 1000,
+            restartServicePendingIntent
+        )
     }
     
     // Implementation methods for the service
@@ -419,7 +452,7 @@ class WasmEdgeService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "WasmEdge Service",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = "WasmEdge API Server Service"
                 setShowBadge(false)
@@ -669,9 +702,12 @@ class WasmEdgeService : Service() {
                     PowerManager.PARTIAL_WAKE_LOCK,
                     "WasmEdgeService::WakeLock"
                 ).apply {
-                    acquire(10*60*1000L /*10 minutes*/)
+                    acquire() // No timeout for continuous operation
                 }
                 isWakeLockHeld.set(true)
+                
+                // Also acquire WiFi lock for network operations
+                acquireWifiLock()
                 
                 // Save preference
                 sharedPreferences.edit().putBoolean(PREF_WAKE_LOCK, true).apply()
@@ -695,6 +731,9 @@ class WasmEdgeService : Service() {
                 wakeLock = null
                 isWakeLockHeld.set(false)
                 
+                // Also release WiFi lock
+                releaseWifiLock()
+                
                 // Save preference
                 sharedPreferences.edit().putBoolean(PREF_WAKE_LOCK, false).apply()
                 
@@ -703,6 +742,37 @@ class WasmEdgeService : Service() {
             }
         } catch (e: Exception) {
             Log.e("WasmEdgeService", "Failed to release wake lock: ${e.message}")
+        }
+    }
+    
+    // WiFi lock management
+    private fun acquireWifiLock() {
+        try {
+            if (wifiLock == null) {
+                wifiLock = wifiManager.createWifiLock(
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                    "WasmEdgeService::WifiLock"
+                ).apply {
+                    acquire()
+                }
+                Log.i("WasmEdgeService", "WiFi lock acquired")
+            }
+        } catch (e: Exception) {
+            Log.e("WasmEdgeService", "Failed to acquire WiFi lock: ${e.message}")
+        }
+    }
+    
+    private fun releaseWifiLock() {
+        try {
+            wifiLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                }
+            }
+            wifiLock = null
+            Log.i("WasmEdgeService", "WiFi lock released")
+        } catch (e: Exception) {
+            Log.e("WasmEdgeService", "Failed to release WiFi lock: ${e.message}")
         }
     }
     

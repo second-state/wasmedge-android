@@ -1,6 +1,8 @@
 package com.example.wasmedge_android_cli
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -11,6 +13,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.*
@@ -47,6 +51,17 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, "Battery optimization disabled successfully", Toast.LENGTH_SHORT).show()
         }
     }
+    
+    // Activity result launcher for notification permission (Android 13+)
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            Toast.makeText(this, "Notification permission granted", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Notification permission denied. Service may not work properly.", Toast.LENGTH_LONG).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,7 +73,8 @@ class MainActivity : ComponentActivity() {
         // Initialize service connection
         serviceConnection = WasmEdgeServiceConnection(this)
         
-        // Check and request battery optimization exemption
+        // Check and request permissions
+        checkNotificationPermission()
         checkBatteryOptimization()
         
         setContent {
@@ -117,6 +133,19 @@ class MainActivity : ComponentActivity() {
                 } catch (e2: Exception) {
                     Toast.makeText(this, "Please disable battery optimization manually in Settings", Toast.LENGTH_LONG).show()
                 }
+            }
+        }
+    }
+    
+    private fun checkNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                // Request notification permission
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
