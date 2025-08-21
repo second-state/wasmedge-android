@@ -1,11 +1,17 @@
 package com.example.wasmedge_android_cli
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import java.io.*
 import java.lang.reflect.Field
@@ -15,9 +21,26 @@ class WasmEdgeService : Service() {
     
     private var process: Process? = null
     private var serviceJob: Job? = null
+    private var monitoringJob: Job? = null
     private val isRunning = AtomicBoolean(false)
     private var currentStatus = "Stopped"
     private var serverPort = 8080
+    private var lastStartParams: StartParams? = null
+    private val isMonitoringEnabled = AtomicBoolean(false)
+    
+    companion object {
+        private const val NOTIFICATION_ID = 1001
+        private const val CHANNEL_ID = "WasmEdgeServiceChannel"
+        private const val MONITOR_INTERVAL_MS = 5000L // 5 seconds
+        private const val RESTART_DELAY_MS = 2000L // 2 seconds
+    }
+    
+    private data class StartParams(
+        val modelFile: String,
+        val templateType: String,
+        val contextSize: Int,
+        val port: Int
+    )
     
     private val binder = object : IWasmEdgeServiceStub() {
         
@@ -64,13 +87,38 @@ class WasmEdgeService : Service() {
     override fun onCreate() {
         super.onCreate()
         Log.d("WasmEdgeService", "Service created")
+        createNotificationChannel()
+    }
+    
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d("WasmEdgeService", "Service started with action: ${intent?.action}")
+        
+        when (intent?.action) {
+            "STOP_SERVICE" -> {
+                // Explicit request to stop service
+                stopApiServerImpl()
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            else -> {
+                // Normal service start
+                startForegroundService()
+                return START_STICKY
+            }
+        }
     }
     
     override fun onDestroy() {
         super.onDestroy()
         Log.d("WasmEdgeService", "Service destroyed")
         try {
+            stopProcessMonitoring()
             stopApiServerImpl()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                stopForeground(true)
+            }
         } catch (e: Exception) {
             Log.e("WasmEdgeService", "Error stopping service: ${e.message}")
         }
@@ -90,12 +138,20 @@ class WasmEdgeService : Service() {
         
         return try {
             serverPort = port
+            lastStartParams = StartParams(modelFile, templateType, contextSize, port)
+            updateNotification("Starting WasmEdge server on port $port")
+            
             serviceJob = CoroutineScope(Dispatchers.IO).launch {
                 executeWasmEdgeProcess(modelFile, templateType, contextSize, port)
             }
+            
+            // Start monitoring after process is fully started
+            // (monitoring will be started from executeWasmEdgeProcess after server is ready)
+            
             true
         } catch (e: Exception) {
             Log.e("WasmEdgeService", "Failed to start API server: ${e.message}")
+            updateNotification("Failed to start: ${e.message}")
             false
         }
     }
@@ -113,6 +169,9 @@ class WasmEdgeService : Service() {
 
     private fun stopApiServerImpl(): Boolean {
         return try {
+            // Stop monitoring first
+            stopProcessMonitoring()
+            
             if (isRunning.get() && process != null) {
                 val pid = getProcessId(process!!)
                 if (pid != -1) {
@@ -132,6 +191,8 @@ class WasmEdgeService : Service() {
                 }
                 isRunning.set(false)
                 currentStatus = "Stopped"
+                lastStartParams = null
+                updateNotification("WasmEdge service stopped")
                 Log.i("WasmEdgeService", "API server stopped")
                 true
             } else {
@@ -258,26 +319,272 @@ class WasmEdgeService : Service() {
             
             isRunning.set(true)
             currentStatus = "Running on port $port"
+            updateNotification("WasmEdge server running on port $port")
+            
+            // Start monitoring after a delay if server output doesn't contain "Server listening on"
+            var monitoringStarted = false
+            var lineCount = 0
             
             val reader = BufferedReader(InputStreamReader(process!!.inputStream))
             var line: String?
             while (reader.readLine().also { line = it } != null && isRunning.get()) {
                 Log.d("WasmEdgeService", line!!)
+                lineCount++
+                
                 // Update status based on output if needed
                 if (line!!.contains("Server listening on")) {
                     currentStatus = "Server listening on port $port"
+                    updateNotification("Server listening on port $port")
+                    
+                    // Start monitoring only after server is confirmed listening
+                    if (!isMonitoringEnabled.get()) {
+                        Log.i("WasmEdgeService", "Server is ready (found listening message), starting monitoring")
+                        startProcessMonitoring()
+                        monitoringStarted = true
+                    } else {
+                        Log.d("WasmEdgeService", "Monitoring already enabled")
+                    }
+                } else if (!monitoringStarted && lineCount > 100) {
+                    // If we haven't seen "Server listening on" after 100 lines, start monitoring anyway
+                    // The server might be running but not outputting the expected message
+                    Log.i("WasmEdgeService", "Server seems ready (processed $lineCount lines), starting monitoring")
+                    startProcessMonitoring()
+                    monitoringStarted = true
+                    currentStatus = "Server started (monitoring enabled)"
+                    updateNotification(currentStatus)
+                } else {
+                    Log.v("WasmEdgeService", "Output: $line")
                 }
             }
             
             Log.d("WasmEdgeService", "WasmEdge process completed")
             currentStatus = "Process completed"
+            if (isMonitoringEnabled.get()) {
+                // Process died unexpectedly while monitoring was active
+                updateNotification("WasmEdge process died unexpectedly")
+                Log.w("WasmEdgeService", "Process died unexpectedly while monitoring")
+            } else {
+                // Normal shutdown
+                updateNotification("WasmEdge process completed")
+            }
             isRunning.set(false)
             
         } catch (e: Exception) {
             val errorMsg = "Error: ${e.message}"
             Log.e("WasmEdgeService", errorMsg)
             currentStatus = errorMsg
+            updateNotification(errorMsg)
             isRunning.set(false)
+        }
+    }
+    
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "WasmEdge Service",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "WasmEdge API Server Service"
+                setShowBadge(false)
+            }
+            
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+    
+    private fun startForegroundService() {
+        val notification = createNotification("WasmEdge service is ready")
+        startForeground(NOTIFICATION_ID, notification)
+    }
+    
+    private fun createNotification(contentText: String): Notification {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent, 
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("WasmEdge Service")
+            .setContentText(contentText)
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+    }
+    
+    private fun updateNotification(contentText: String) {
+        val notification = createNotification(contentText)
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(NOTIFICATION_ID, notification)
+    }
+    
+    private fun startProcessMonitoring() {
+        if (isMonitoringEnabled.get()) {
+            Log.d("WasmEdgeService", "Monitoring already started")
+            return
+        }
+        
+        isMonitoringEnabled.set(true)
+        Log.i("WasmEdgeService", "Process monitoring enabled - starting in 5 seconds")
+        monitoringJob = CoroutineScope(Dispatchers.IO).launch {
+            delay(5000) // Wait for initial startup
+            Log.i("WasmEdgeService", "Starting process monitoring loop")
+            updateNotification("Monitoring WasmEdge process...")
+            
+            var loopCount = 0
+            while (isMonitoringEnabled.get()) {
+                try {
+                    loopCount++
+                    Log.d("WasmEdgeService", "Monitoring loop $loopCount")
+                    
+                    if (isRunning.get()) {
+                        val isProcessAlive = checkProcessAlive()
+                        val isServerResponsive = checkServerHealth()
+                        
+                        Log.i("WasmEdgeService", "Process check - alive: $isProcessAlive, responsive: $isServerResponsive")
+                        
+                        if (!isProcessAlive) {
+                            Log.w("WasmEdgeService", "Process is dead - restarting")
+                            handleProcessFailure()
+                        } else if (!isServerResponsive) {
+                            Log.w("WasmEdgeService", "Process alive but server not responsive - may be starting up or under load")
+                            // Don't restart immediately for server responsiveness issues
+                            // The process might just be busy or starting up
+                            currentStatus = "Server not responding (port $serverPort)"
+                            updateNotification(currentStatus)
+                        } else {
+                            Log.d("WasmEdgeService", "Process health check passed")
+                            // Update notification with healthy status
+                            if (currentStatus != "Server listening on port $serverPort") {
+                                currentStatus = "Server listening on port $serverPort"
+                                updateNotification(currentStatus)
+                            }
+                        }
+                    } else {
+                        Log.d("WasmEdgeService", "Service not running, skipping checks")
+                    }
+                    
+                    delay(MONITOR_INTERVAL_MS)
+                } catch (e: Exception) {
+                    Log.e("WasmEdgeService", "Error in monitoring loop: ${e.message}")
+                    delay(MONITOR_INTERVAL_MS)
+                }
+            }
+            Log.i("WasmEdgeService", "Monitoring loop ended")
+        }
+    }
+    
+    private fun stopProcessMonitoring() {
+        isMonitoringEnabled.set(false)
+        monitoringJob?.cancel()
+        monitoringJob = null
+        Log.d("WasmEdgeService", "Process monitoring stopped")
+    }
+    
+    private fun checkProcessAlive(): Boolean {
+        return try {
+            process?.let { p ->
+                val exitValue = p.exitValue() // This throws if process is still running
+                Log.w("WasmEdgeService", "Process has exited with code: $exitValue")
+                false // If we get here, process has exited
+            } ?: run {
+                Log.w("WasmEdgeService", "Process object is null")
+                false
+            }
+        } catch (e: IllegalThreadStateException) {
+            // Process is still running
+            Log.d("WasmEdgeService", "Process is still alive")
+            true
+        } catch (e: Exception) {
+            Log.e("WasmEdgeService", "Error checking process alive: ${e.message}")
+            false
+        }
+    }
+    
+    private fun checkServerHealth(): Boolean {
+        return try {
+            Log.d("WasmEdgeService", "Checking server health at localhost:$serverPort")
+            val url = java.net.URL("http://localhost:$serverPort/v1/models")
+            val connection = url.openConnection() as java.net.HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 5000
+            connection.readTimeout = 5000
+            connection.setRequestProperty("User-Agent", "WasmEdgeService/1.0")
+            
+            val responseCode = connection.responseCode
+            Log.d("WasmEdgeService", "Server health check response code: $responseCode")
+            connection.disconnect()
+            
+            val isHealthy = responseCode in 200..299
+            if (isHealthy) {
+                Log.d("WasmEdgeService", "Server health check passed")
+            } else {
+                Log.w("WasmEdgeService", "Server health check failed with code: $responseCode")
+            }
+            isHealthy
+        } catch (e: Exception) {
+            Log.w("WasmEdgeService", "Server health check failed: ${e.javaClass.simpleName}: ${e.message}")
+            // Try a simple socket check as fallback
+            checkPortOpen()
+        }
+    }
+    
+    private fun checkPortOpen(): Boolean {
+        return try {
+            Log.d("WasmEdgeService", "Fallback: checking if port $serverPort is open")
+            val socket = java.net.Socket()
+            socket.connect(java.net.InetSocketAddress("127.0.0.1", serverPort), 3000)
+            socket.close()
+            Log.d("WasmEdgeService", "Port $serverPort is open")
+            true
+        } catch (e: Exception) {
+            Log.w("WasmEdgeService", "Port check failed: ${e.message}")
+            false
+        }
+    }
+    
+    private fun handleProcessFailure() {
+        Log.w("WasmEdgeService", "Handling process failure - attempting restart")
+        updateNotification("WasmEdge process died - restarting...")
+        
+        try {
+            // Signal the main process thread to stop reading
+            isRunning.set(false)
+            
+            // Cancel the service job gracefully
+            serviceJob?.cancel()
+            
+            // Clean up dead process after a brief delay
+            Thread.sleep(1000)
+            process?.destroy()
+            
+            // Wait before restart
+            Thread.sleep(RESTART_DELAY_MS)
+            
+            // Restart with last known parameters
+            lastStartParams?.let { params ->
+                Log.i("WasmEdgeService", "Restarting WasmEdge with previous parameters")
+                isRunning.set(false) // Reset state
+                
+                serviceJob = CoroutineScope(Dispatchers.IO).launch {
+                    executeWasmEdgeProcess(
+                        params.modelFile,
+                        params.templateType,
+                        params.contextSize,
+                        params.port
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("WasmEdgeService", "Failed to restart process: ${e.message}")
+            currentStatus = "Restart failed: ${e.message}"
+            updateNotification(currentStatus)
         }
     }
 }

@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.os.Build
 import android.os.IBinder
 import android.util.Log
 
@@ -35,7 +36,7 @@ class WasmEdgeServiceConnection(private val context: Context) {
     var onServiceDisconnected: (() -> Unit)? = null
     
     /**
-     * Bind to the WasmEdge service
+     * Bind to the WasmEdge service and start it as foreground service
      */
     fun bindService(): Boolean {
         if (isBound) {
@@ -51,15 +52,23 @@ class WasmEdgeServiceConnection(private val context: Context) {
         }
         
         return try {
+            // Start the service as foreground service first
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            
+            // Then bind to it for communication
             context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         } catch (e: Exception) {
-            Log.e("WasmEdgeServiceConnection", "Failed to bind service: ${e.message}")
+            Log.e("WasmEdgeServiceConnection", "Failed to start and bind service: ${e.message}")
             false
         }
     }
     
     /**
-     * Unbind from the WasmEdge service
+     * Unbind from the WasmEdge service (but keep service running)
      */
     fun unbindService() {
         if (isBound) {
@@ -67,6 +76,35 @@ class WasmEdgeServiceConnection(private val context: Context) {
             isBound = false
             wasmEdgeService = null
             Log.d("WasmEdgeServiceConnection", "Service unbound")
+        }
+    }
+    
+    /**
+     * Stop the WasmEdge service completely
+     */
+    fun stopService() {
+        try {
+            // Unbind if bound
+            unbindService()
+            
+            // Stop the service with explicit stop action
+            val intent = Intent().apply {
+                component = ComponentName(
+                    "com.example.wasmedge_android_cli",
+                    "com.example.wasmedge_android_cli.WasmEdgeService"
+                )
+                action = "STOP_SERVICE"
+            }
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            
+            Log.d("WasmEdgeServiceConnection", "Service stop requested")
+        } catch (e: Exception) {
+            Log.e("WasmEdgeServiceConnection", "Error stopping service: ${e.message}")
         }
     }
     
