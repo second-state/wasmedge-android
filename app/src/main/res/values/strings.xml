@@ -1,3 +1,46 @@
 <resources>
     <string name="app_name">wasmedge-android-cli</string>
+    
+    <!-- Service Notifications -->
+    <string name="notification_channel_name">WasmEdge Service</string>
+    <string name="notification_channel_description">WasmEdge API Server Service notifications</string>
+    <string name="notification_title">WasmEdge Service</string>
+    <string name="notification_wake_lock_active">Wake Lock Active</string>
+    <string name="notification_action_wake_lock_acquire">Acquire Wake Lock</string>
+    <string name="notification_action_wake_lock_release">Release Wake Lock</string>
+    <string name="notification_action_exit">Exit</string>
+    
+    <!-- Battery Optimization -->
+    <string name="battery_optimization_title">Battery Optimization</string>
+    <string name="battery_optimization_message">To ensure WasmEdge runs properly in the background, please disable battery optimization for this app. This prevents Android from stopping the service when the app is backgrounded.</string>
+    <string name="battery_optimization_open_settings">Open Settings</string>
+    <string name="battery_optimization_later">Later</string>
+    <string name="battery_optimization_disabled">Disabled ✓</string>
+    <string name="battery_optimization_enabled">Enabled ⚠</string>
+    <string name="battery_optimization_warning_title">Background Execution Limited</string>
+    <string name="battery_optimization_warning_message">Disable battery optimization for uninterrupted service</string>
+    <string name="battery_optimization_fix">Fix</string>
+    
+    <!-- Service Status -->
+    <string name="service_status_connected">Connected</string>
+    <string name="service_status_disconnected">Disconnected</string>
+    <string name="service_status_label">Service Status: %s</string>
+    <string name="api_server_label">API Server: %s</string>
+    <string name="battery_optimization_label">Battery Optimization: </string>
+    
+    <!-- Buttons -->
+    <string name="button_start_server">Start Server</string>
+    <string name="button_stop_server">Stop Server</string>
+    <string name="button_run_llamaedge_direct">Run LlamaEdge Direct (fallback)</string>
+    
+    <!-- Messages -->
+    <string name="msg_service_connected">Service connected!</string>
+    <string name="msg_service_disconnected">Service disconnected!</string>
+    <string name="msg_starting_api_server">Starting API server via service...</string>
+    <string name="msg_failed_start_api_server">Failed to start API server via service</string>
+    <string name="msg_stopping_api_server">Stopping API server...</string>
+    <string name="msg_failed_stop_api_server">Failed to stop API server</string>
+    <string name="msg_starting_llamaedge_direct">Starting LlamaEdge directly...</string>
+    <string name="msg_battery_optimization_disabled">Battery optimization disabled successfully</string>
+    <string name="msg_battery_optimization_manual">Please disable battery optimization manually in Settings</string>
 </resources>
