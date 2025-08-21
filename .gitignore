@@ -5,3 +5,6 @@
 build/
 local.properties
 *.gguf
+*.apk
+*.so
+app/src/main/assets/llamaedge/wasmedge
