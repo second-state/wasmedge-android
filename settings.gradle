@@ -20,4 +20,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "wasmedge-android-cli"
+include ':lib'
 include ':app'
