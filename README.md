@@ -11,31 +11,11 @@ export ANDROID_HOME=/path/to/your/android/sdk
 export ANDROID_NDK_HOME=/path/to/your/android/ndk
 ```
 
-## Build the WasmEdge Assets
+## Patch the WasmEdge Assets
 
 ```
 git submodule update --init
-cd WasmEdge
-cmake -Bbuild \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DWASMEDGE_USE_LLVM=OFF \
-  -DWASMEDGE_PLUGIN_WASI_NN_BACKEND=GGML \
-  -DWASMEDGE_PLUGIN_WASI_NN_GGML_LLAMA_NATIVE=OFF \
-  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-  -DANDROID_ABI=arm64-v8a \
-  -DANDROID_PLATFORM=android-28 \
-  .
-cmake --build build
-```
-
-## Copy the WasmEdge Assets
-
-Copy the built WasmEdge assets to the Android project:
-
-```
-cp WasmEdge/build/tools/wasmedge/wasmedge app/src/main/assets/llamaedge/
-cp WasmEdge/build/plugins/wasi_nn/libwasmedgePluginWasiNN.so app/src/main/assets/llamaedge/
-cp WasmEdge/build/lib/api/libwasmedge.so app/src/main/assets/llamaedge/
+(cd WasmEdge && git apply ../patch/wasmedge-android.patch)
 ```
 
 ## Download the LLM Model

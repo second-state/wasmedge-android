@@ -1,0 +1,29 @@
+diff --git a/cmake/Helper.cmake b/cmake/Helper.cmake
+index 3cd3b5f5..4f9a00a4 100644
+--- a/cmake/Helper.cmake
++++ b/cmake/Helper.cmake
+@@ -11,8 +11,8 @@ if(CMAKE_BUILD_TYPE STREQUAL Release OR CMAKE_BUILD_TYPE STREQUAL RelWithDebInfo
+       list(TRANSFORM CMAKE_C_COMPILE_OPTIONS_IPO REPLACE "^-flto$" "-flto=auto")
+       list(TRANSFORM CMAKE_CXX_COMPILE_OPTIONS_IPO REPLACE "^-flto$" "-flto=auto")
+     endif()
+-    set(CMAKE_JOB_POOLS "link=2")
+-    set(CMAKE_JOB_POOL_LINK link)
++    #set(CMAKE_JOB_POOLS "link=2")
++    #set(CMAKE_JOB_POOL_LINK link)
+   endif()
+ endif()
+ if(NOT WASMEDGE_USE_CXX11_ABI)
+diff --git a/lib/plugin/plugin.cpp b/lib/plugin/plugin.cpp
+index 5d0b6b68..4900bf05 100644
+--- a/lib/plugin/plugin.cpp
++++ b/lib/plugin/plugin.cpp
+@@ -354,6 +354,9 @@ WASMEDGE_EXPORT bool Plugin::load(const std::filesystem::path &Path) noexcept {
+                Path.extension().u8string() == WASMEDGE_LIB_EXTENSION) {
+       return loadFile(Path);
+     }
++  } else if (Path.string().find("/base.apk!/") != std::string::npos &&
++             Path.extension().u8string() == WASMEDGE_LIB_EXTENSION) {
++    return loadFile(Path);
+   }
+   return false;
+ }

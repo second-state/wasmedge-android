@@ -10,11 +10,14 @@ import kotlinx.coroutines.*
 import java.io.*
 import java.lang.reflect.Field
 import java.util.concurrent.atomic.AtomicBoolean
+import org.wasmedge.native_lib.NativeLib
 
 class WasmEdgeService : Service() {
     
+    lateinit var lib: NativeLib
     private var process: Process? = null
     private var serviceJob: Job? = null
+    private var servicePid: Int = -1
     private val isRunning = AtomicBoolean(false)
     private var currentStatus = "Stopped"
     private var serverPort = 8080
@@ -63,6 +66,7 @@ class WasmEdgeService : Service() {
     
     override fun onCreate() {
         super.onCreate()
+        lib = NativeLib(this)
         Log.d("WasmEdgeService", "Service created")
     }
     
@@ -90,9 +94,13 @@ class WasmEdgeService : Service() {
         
         return try {
             serverPort = port
+            currentStatus = "Initializing..."
             serviceJob = CoroutineScope(Dispatchers.IO).launch {
-                executeWasmEdgeProcess(modelFile, templateType, contextSize, port)
+                // executeWasmEdgeProcess(modelFile, templateType, contextSize, port)
+                servicePid = runNativeLlamaApiServer(modelFile, templateType, contextSize, port)
             }
+            isRunning.set(true)
+            currentStatus = "Running on port $port"
             true
         } catch (e: Exception) {
             Log.e("WasmEdgeService", "Failed to start API server: ${e.message}")
@@ -100,48 +108,38 @@ class WasmEdgeService : Service() {
         }
     }
 
-    private fun getProcessId(process: Process): Int {
-        return try {
-            val field: Field = process.javaClass.getDeclaredField("pid")
-            field.isAccessible = true
-            field.getInt(process)
-        } catch (e: Exception) {
-            Log.e("WasmEdgeService", "Failed to get PID by reflection", e)
-            -1
-        }
+    private fun runNativeLlamaApiServer(
+        modelFile: String,
+        templateType: String,
+        contextSize: Int,
+        port: Int
+    ): Int {
+        copyFilesFromAssetsToInternal()
+        val modelPath = File(File(filesDir, "llamaedge"), modelFile).absolutePath
+        val wasmPath = File(File(filesDir, "llamaedge"), "llama-api-server.wasm").absolutePath
+        return lib.llamaApiServer(wasmPath, modelPath, templateType, contextSize, port)
     }
 
     private fun stopApiServerImpl(): Boolean {
-        return try {
-            if (isRunning.get() && process != null) {
-                val pid = getProcessId(process!!)
-                if (pid != -1) {
-                    Log.i("WasmEdgeService", "Attempting to kill process with PID: $pid")
-                    Runtime.getRuntime().exec("kill -9 $pid").waitFor()
-                } else {
-                    Log.w("WasmEdgeService", "Could not get PID, falling back to destroy()")
-                    process?.destroy()
-                }
-                serviceJob?.cancel()
-                // Brief delay to allow the OS to release the port
-                try {
-                    Thread.sleep(500)
-                } catch (ie: InterruptedException) {
-                    // Restore the interrupted status
-                    Thread.currentThread().interrupt()
-                }
-                isRunning.set(false)
-                currentStatus = "Stopped"
-                Log.i("WasmEdgeService", "API server stopped")
-                true
-            } else {
-                Log.w("WasmEdgeService", "API server is not running or process is null")
-                false
+        serviceJob?.let { job ->
+            if (job.isActive) {
+                Log.d("WasmEdgeService", "Job is active, cancelling service job")
+                job.cancel()
+            } else if (job.isCompleted) {
+                Log.d("WasmEdgeService", "Job is already completed")
+            } else if (job.isCancelled) {
+                Log.d("WasmEdgeService", "Job is already cancelled")
             }
-        } catch (e: Exception) {
-            Log.e("WasmEdgeService", "Failed to stop API server: ${e.message}")
-            false
         }
+        if (servicePid != -1) {
+            Log.d("WasmEdgeService", "Stopping WasmEdge API server ($servicePid)...")
+            ProcessBuilder("kill", "-9", servicePid.toString()).start().waitFor()
+            Log.d("WasmEdgeService", "Stopping WasmEdge API server ($servicePid)...done")
+            servicePid = -1
+        }
+        currentStatus = "Stopped"
+        isRunning.set(false)
+        return true
     }
     
     private fun isApiServerRunningImpl(): Boolean {
