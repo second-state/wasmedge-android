@@ -1,45 +1,126 @@
 package com.example.wasmedge_android_cli
 
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
 import com.example.wasmedge_android_cli.ui.theme.WasmedgeandroidcliTheme
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.*
+
+class MainViewModel : ViewModel() {
+    private val _isServiceBound = mutableStateOf(false)
+    val isServiceBound: State<Boolean> = _isServiceBound
+
+    private val _serverStatus = mutableStateOf("Not connected")
+    val serverStatus: State<String> = _serverStatus
+
+    private val _outputText = mutableStateOf("")
+    val outputText: State<String> = _outputText
+
+    private var statusUpdateJob: Job? = null
+    private var serviceConnection: WasmEdgeServiceConnection? = null
+
+    fun initializeService(connection: WasmEdgeServiceConnection) {
+        serviceConnection = connection
+    }
+
+    fun getServiceConnection(): WasmEdgeServiceConnection? = serviceConnection
+
+    fun onServiceConnected() {
+        _isServiceBound.value = true
+        addOutputText("Service connected!\n")
+        startStatusPolling()
+    }
+
+    fun onServiceDisconnected() {
+        _isServiceBound.value = false
+        addOutputText("Service disconnected!\n")
+        stopStatusPolling()
+    }
+
+    private fun startStatusPolling() {
+        statusUpdateJob?.cancel()
+        statusUpdateJob =
+            viewModelScope.launch {
+                while (isActive && _isServiceBound.value) {
+                    serviceConnection?.let { connection ->
+                        _serverStatus.value = connection.getApiServerStatus()
+                    }
+                    delay(1000)
+                }
+            }
+    }
+
+    private fun stopStatusPolling() {
+        statusUpdateJob?.cancel()
+        statusUpdateJob = null
+        _serverStatus.value = "Not connected"
+    }
+
+    fun addOutputText(text: String) {
+        _outputText.value += text
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopStatusPolling()
+    }
+}
 
 class MainActivity : ComponentActivity() {
     private lateinit var serviceConnection: WasmEdgeServiceConnection
+    private lateinit var viewModel: MainViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        viewModel = ViewModelProvider(this)[MainViewModel::class.java]
 
         // Initialize service connection
         serviceConnection = WasmEdgeServiceConnection(this)
+        viewModel.initializeService(serviceConnection)
+        serviceConnection.onServiceConnected = {
+            viewModel.onServiceConnected()
+        }
+        serviceConnection.onServiceDisconnected = {
+            viewModel.onServiceDisconnected()
+        }
+        serviceConnection.bindService()
 
         setContent {
             WasmedgeandroidcliTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     MainContent(
-                        serviceConnection = serviceConnection,
+                        viewModel = viewModel,
                         modifier = Modifier.padding(innerPadding),
                     )
                 }
@@ -55,35 +136,14 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainContent(
-    serviceConnection: WasmEdgeServiceConnection,
+    viewModel: MainViewModel,
     modifier: Modifier = Modifier,
 ) {
-    var outputText by remember { mutableStateOf("Select an option below:\n") }
-    var isServiceBound by remember { mutableStateOf(false) }
-    var serverStatus by remember { mutableStateOf("Not connected") }
+    val outputText by viewModel.outputText
+    val isServiceBound by viewModel.isServiceBound
+    val serverStatus by viewModel.serverStatus
     val scrollState = rememberScrollState()
     val coroutineScope = rememberCoroutineScope()
-
-    // Bind to service on first composition
-    LaunchedEffect(Unit) {
-        serviceConnection.onServiceConnected = {
-            isServiceBound = true
-            outputText = outputText + "Service connected!\n"
-        }
-        serviceConnection.onServiceDisconnected = {
-            isServiceBound = false
-            outputText = outputText + "Service disconnected!\n"
-        }
-        serviceConnection.bindService()
-    }
-
-    // Periodically update server status
-    LaunchedEffect(isServiceBound) {
-        while (isServiceBound) {
-            kotlinx.coroutines.delay(1000)
-            serverStatus = serviceConnection.getApiServerStatus()
-        }
-    }
 
     // Auto-scroll to bottom when new content is added
     LaunchedEffect(outputText) {
@@ -123,10 +183,10 @@ fun MainContent(
             Button(
                 onClick = {
                     coroutineScope.launch {
-                        if (serviceConnection.startApiServer()) {
-                            outputText = outputText + "Starting API server via service...\n"
+                        if (viewModel.getServiceConnection()?.startApiServer() == true) {
+                            viewModel.addOutputText("Starting API server via service...\n")
                         } else {
-                            outputText = outputText + "Failed to start API server via service\n"
+                            viewModel.addOutputText("Failed to start API server via service\n")
                         }
                     }
                 },
@@ -139,10 +199,10 @@ fun MainContent(
             Button(
                 onClick = {
                     coroutineScope.launch {
-                        if (serviceConnection.stopApiServer()) {
-                            outputText = outputText + "Stopping API server...\n"
+                        if (viewModel.getServiceConnection()?.stopApiServer() == true) {
+                            viewModel.addOutputText("Stopping API server...\n")
                         } else {
-                            outputText = outputText + "Failed to stop API server\n"
+                            viewModel.addOutputText("Failed to stop API server\n")
                         }
                     }
                 },

@@ -2,14 +2,17 @@ package com.example.wasmedge_android_cli
 
 import android.app.Service
 import android.content.Intent
-import android.os.Binder
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import org.wasmedge.native_lib.NativeLib
-import java.io.*
-import java.lang.reflect.Field
+import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 
 class WasmEdgeService : Service() {
