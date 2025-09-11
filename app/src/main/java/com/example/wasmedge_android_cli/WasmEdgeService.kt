@@ -96,7 +96,6 @@ class WasmEdgeService : Service() {
             serverPort = port
             currentStatus = "Initializing..."
             serviceJob = CoroutineScope(Dispatchers.IO).launch {
-                // executeWasmEdgeProcess(modelFile, templateType, contextSize, port)
                 servicePid = runNativeLlamaApiServer(modelFile, templateType, contextSize, port)
             }
             isRunning.set(true)
@@ -207,75 +206,6 @@ class WasmEdgeService : Service() {
             } catch (e: Exception) {
                 Log.e("WasmEdgeService", "Error copying $fileName: ${e.message}")
             }
-        }
-    }
-    
-    private suspend fun executeWasmEdgeProcess(
-        modelFile: String,
-        templateType: String,
-        contextSize: Int,
-        port: Int
-    ) {
-        try {
-            currentStatus = "Initializing..."
-            copyFilesFromAssetsToInternal()
-            
-            val wasmedgeFile = File(filesDir, "llamaedge/wasmedge")
-            val workingDir = File(filesDir, "llamaedge")
-            
-            if (!wasmedgeFile.exists()) {
-                currentStatus = "Error: WasmEdge binary not found"
-                Log.e("WasmEdgeService", "WasmEdge binary not found at: ${wasmedgeFile.absolutePath}")
-                return
-            }
-            
-            currentStatus = "Starting WasmEdge..."
-            Log.d("WasmEdgeService", "Starting WasmEdge API server...")
-            Log.d("WasmEdgeService", "Working directory: ${workingDir.absolutePath}")
-            Log.d("WasmEdgeService", "WasmEdge file: ${wasmedgeFile.absolutePath}")
-            
-            // Create environment array
-            val env = arrayOf(
-                "LD_LIBRARY_PATH=${workingDir.absolutePath}",
-                "WASMEDGE_PLUGIN_PATH=${workingDir.absolutePath}"
-            )
-            
-            process = Runtime.getRuntime().exec(
-                arrayOf(
-                    wasmedgeFile.absolutePath,
-                    "--dir", ".:.",
-                    "--nn-preload", "default:GGML:AUTO:$modelFile",
-                    "llama-api-server.wasm",
-                    "--prompt-template", templateType,
-                    "--ctx-size", contextSize.toString(),
-                    "--port", port.toString()
-                ),
-                env,
-                workingDir
-            )
-            
-            isRunning.set(true)
-            currentStatus = "Running on port $port"
-            
-            val reader = BufferedReader(InputStreamReader(process!!.inputStream))
-            var line: String?
-            while (reader.readLine().also { line = it } != null && isRunning.get()) {
-                Log.d("WasmEdgeService", line!!)
-                // Update status based on output if needed
-                if (line!!.contains("Server listening on")) {
-                    currentStatus = "Server listening on port $port"
-                }
-            }
-            
-            Log.d("WasmEdgeService", "WasmEdge process completed")
-            currentStatus = "Process completed"
-            isRunning.set(false)
-            
-        } catch (e: Exception) {
-            val errorMsg = "Error: ${e.message}"
-            Log.e("WasmEdgeService", errorMsg)
-            currentStatus = errorMsg
-            isRunning.set(false)
         }
     }
 }
