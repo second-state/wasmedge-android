@@ -1,17 +1,18 @@
 package com.example.wasmedge_android_cli
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -23,7 +24,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.*
-import android.util.Log
 
 class MainActivity : ComponentActivity() {
     private lateinit var serviceConnection: WasmEdgeServiceConnection
@@ -31,16 +31,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
+
         // Initialize service connection
         serviceConnection = WasmEdgeServiceConnection(this)
-        
+
         setContent {
             WasmedgeandroidcliTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     MainContent(
                         serviceConnection = serviceConnection,
-                        modifier = Modifier.padding(innerPadding)
+                        modifier = Modifier.padding(innerPadding),
                     )
                 }
             }
@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainContent(
     serviceConnection: WasmEdgeServiceConnection,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     var outputText by remember { mutableStateOf("Select an option below:\n") }
     var isServiceBound by remember { mutableStateOf(false) }
@@ -91,25 +91,26 @@ fun MainContent(
     }
 
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier =
+            modifier
+                .fillMaxSize()
+                .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // Status Display
         Card(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Column(
-                modifier = Modifier.padding(12.dp)
+                modifier = Modifier.padding(12.dp),
             ) {
                 Text(
                     text = "Service Status: ${if (isServiceBound) "Connected" else "Disconnected"}",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
                     text = "API Server: $serverStatus",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
         }
@@ -117,7 +118,7 @@ fun MainContent(
         // Control Buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Button(
                 onClick = {
@@ -130,11 +131,11 @@ fun MainContent(
                     }
                 },
                 modifier = Modifier.weight(1f),
-                enabled = isServiceBound
+                enabled = isServiceBound,
             ) {
                 Text("Start Server")
             }
-            
+
             Button(
                 onClick = {
                     coroutineScope.launch {
@@ -146,7 +147,7 @@ fun MainContent(
                     }
                 },
                 modifier = Modifier.weight(1f),
-                enabled = isServiceBound
+                enabled = isServiceBound,
             ) {
                 Text("Stop Server")
             }
@@ -154,18 +155,20 @@ fun MainContent(
 
         // Output display
         Card(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 12.dp)
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(top = 12.dp),
         ) {
             Text(
                 text = outputText,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(12.dp)
-                    .verticalScroll(scrollState),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(12.dp)
+                        .verticalScroll(scrollState),
                 fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp
+                fontSize = 12.sp,
             )
         }
     }

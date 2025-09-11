@@ -10,30 +10,35 @@ import android.util.Log
 /**
  * Helper class for other applications to connect to the WasmEdge service
  */
-class WasmEdgeServiceConnection(private val context: Context) {
-    
+class WasmEdgeServiceConnection(
+    private val context: Context,
+) {
     private var wasmEdgeService: IWasmEdgeService? = null
     private var isBound = false
-    
-    private val serviceConnection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            wasmEdgeService = IWasmEdgeServiceStub.asInterface(service)
-            isBound = true
-            Log.d("WasmEdgeServiceConnection", "Service connected")
-            onServiceConnected?.invoke()
+
+    private val serviceConnection =
+        object : ServiceConnection {
+            override fun onServiceConnected(
+                name: ComponentName?,
+                service: IBinder?,
+            ) {
+                wasmEdgeService = IWasmEdgeServiceStub.asInterface(service)
+                isBound = true
+                Log.d("WasmEdgeServiceConnection", "Service connected")
+                onServiceConnected?.invoke()
+            }
+
+            override fun onServiceDisconnected(name: ComponentName?) {
+                wasmEdgeService = null
+                isBound = false
+                Log.d("WasmEdgeServiceConnection", "Service disconnected")
+                onServiceDisconnected?.invoke()
+            }
         }
-        
-        override fun onServiceDisconnected(name: ComponentName?) {
-            wasmEdgeService = null
-            isBound = false
-            Log.d("WasmEdgeServiceConnection", "Service disconnected")
-            onServiceDisconnected?.invoke()
-        }
-    }
-    
+
     var onServiceConnected: (() -> Unit)? = null
     var onServiceDisconnected: (() -> Unit)? = null
-    
+
     /**
      * Bind to the WasmEdge service
      */
@@ -42,14 +47,16 @@ class WasmEdgeServiceConnection(private val context: Context) {
             Log.w("WasmEdgeServiceConnection", "Service is already bound")
             return true
         }
-        
-        val intent = Intent().apply {
-            component = ComponentName(
-                "com.example.wasmedge_android_cli",
-                "com.example.wasmedge_android_cli.WasmEdgeService"
-            )
-        }
-        
+
+        val intent =
+            Intent().apply {
+                component =
+                    ComponentName(
+                        "com.example.wasmedge_android_cli",
+                        "com.example.wasmedge_android_cli.WasmEdgeService",
+                    )
+            }
+
         return try {
             context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         } catch (e: Exception) {
@@ -57,7 +64,7 @@ class WasmEdgeServiceConnection(private val context: Context) {
             false
         }
     }
-    
+
     /**
      * Unbind from the WasmEdge service
      */
@@ -69,19 +76,18 @@ class WasmEdgeServiceConnection(private val context: Context) {
             Log.d("WasmEdgeServiceConnection", "Service unbound")
         }
     }
-    
+
     /**
      * Start the API server with default parameters
      */
-    fun startApiServer(): Boolean {
-        return try {
+    fun startApiServer(): Boolean =
+        try {
             wasmEdgeService?.startApiServer() ?: false
         } catch (e: Exception) {
             Log.e("WasmEdgeServiceConnection", "Error starting API server: ${e.message}")
             false
         }
-    }
-    
+
     /**
      * Start the API server with custom parameters
      */
@@ -89,66 +95,61 @@ class WasmEdgeServiceConnection(private val context: Context) {
         modelFile: String,
         templateType: String,
         contextSize: Int,
-        port: Int
-    ): Boolean {
-        return try {
+        port: Int,
+    ): Boolean =
+        try {
             wasmEdgeService?.startApiServerWithParams(modelFile, templateType, contextSize, port) ?: false
         } catch (e: Exception) {
             Log.e("WasmEdgeServiceConnection", "Error starting API server with params: ${e.message}")
             false
         }
-    }
-    
+
     /**
      * Stop the API server
      */
-    fun stopApiServer(): Boolean {
-        return try {
+    fun stopApiServer(): Boolean =
+        try {
             wasmEdgeService?.stopApiServer() ?: false
         } catch (e: Exception) {
             Log.e("WasmEdgeServiceConnection", "Error stopping API server: ${e.message}")
             false
         }
-    }
-    
+
     /**
      * Check if the API server is running
      */
-    fun isApiServerRunning(): Boolean {
-        return try {
+    fun isApiServerRunning(): Boolean =
+        try {
             wasmEdgeService?.isApiServerRunning() ?: false
         } catch (e: Exception) {
             Log.e("WasmEdgeServiceConnection", "Error checking server status: ${e.message}")
             false
         }
-    }
-    
+
     /**
      * Get the API server status
      */
-    fun getApiServerStatus(): String {
-        return try {
+    fun getApiServerStatus(): String =
+        try {
             wasmEdgeService?.getApiServerStatus() ?: "Unknown"
         } catch (e: Exception) {
             Log.e("WasmEdgeServiceConnection", "Error getting server status: ${e.message}")
             "Error"
         }
-    }
-    
+
     /**
      * Get the server port
      */
-    fun getServerPort(): Int {
-        return try {
+    fun getServerPort(): Int =
+        try {
             wasmEdgeService?.getServerPort() ?: -1
         } catch (e: Exception) {
             Log.e("WasmEdgeServiceConnection", "Error getting server port: ${e.message}")
             -1
         }
-    }    /**
+
+    /**
      * Check if the service is bound
      */
-    fun isBound(): Boolean {
-        return isBound
-    }
+    fun isBound(): Boolean = isBound
 }

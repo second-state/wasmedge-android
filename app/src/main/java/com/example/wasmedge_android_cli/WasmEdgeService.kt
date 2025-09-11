@@ -7,13 +7,12 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import kotlinx.coroutines.*
+import org.wasmedge.native_lib.NativeLib
 import java.io.*
 import java.lang.reflect.Field
 import java.util.concurrent.atomic.AtomicBoolean
-import org.wasmedge.native_lib.NativeLib
 
 class WasmEdgeService : Service() {
-    
     lateinit var lib: NativeLib
     private var process: Process? = null
     private var serviceJob: Job? = null
@@ -21,55 +20,44 @@ class WasmEdgeService : Service() {
     private val isRunning = AtomicBoolean(false)
     private var currentStatus = "Stopped"
     private var serverPort = 8080
-    
-    private val binder = object : IWasmEdgeServiceStub() {
-        
-        override fun startApiServer(): Boolean {
-            return startApiServerWithParams(
-                "gemma-3-1b-it-Q4_K_M.gguf",
-                "gemma-3",
-                1024,
-                8080
-            )
+
+    private val binder =
+        object : IWasmEdgeServiceStub() {
+            override fun startApiServer(): Boolean =
+                startApiServerWithParams(
+                    "gemma-3-1b-it-Q4_K_M.gguf",
+                    "gemma-3",
+                    1024,
+                    8080,
+                )
+
+            override fun startApiServerWithParams(
+                modelFile: String,
+                templateType: String,
+                contextSize: Int,
+                port: Int,
+            ): Boolean = this@WasmEdgeService.startApiServerWithParamsImpl(modelFile, templateType, contextSize, port)
+
+            override fun stopApiServer(): Boolean = this@WasmEdgeService.stopApiServerImpl()
+
+            override fun isApiServerRunning(): Boolean = this@WasmEdgeService.isApiServerRunningImpl()
+
+            override fun getApiServerStatus(): String = this@WasmEdgeService.getApiServerStatusImpl()
+
+            override fun getServerPort(): Int = this@WasmEdgeService.getServerPortImpl()
         }
-        
-        override fun startApiServerWithParams(
-            modelFile: String,
-            templateType: String,
-            contextSize: Int,
-            port: Int
-        ): Boolean {
-            return this@WasmEdgeService.startApiServerWithParamsImpl(modelFile, templateType, contextSize, port)
-        }
-        
-        override fun stopApiServer(): Boolean {
-            return this@WasmEdgeService.stopApiServerImpl()
-        }
-        
-        override fun isApiServerRunning(): Boolean {
-            return this@WasmEdgeService.isApiServerRunningImpl()
-        }
-        
-        override fun getApiServerStatus(): String {
-            return this@WasmEdgeService.getApiServerStatusImpl()
-        }
-        
-        override fun getServerPort(): Int {
-            return this@WasmEdgeService.getServerPortImpl()
-        }
-    }
-    
+
     override fun onBind(intent: Intent): IBinder {
         Log.d("WasmEdgeService", "Service bound")
         return binder
     }
-    
+
     override fun onCreate() {
         super.onCreate()
         lib = NativeLib(this)
         Log.d("WasmEdgeService", "Service created")
     }
-    
+
     override fun onDestroy() {
         super.onDestroy()
         Log.d("WasmEdgeService", "Service destroyed")
@@ -79,25 +67,26 @@ class WasmEdgeService : Service() {
             Log.e("WasmEdgeService", "Error stopping service: ${e.message}")
         }
     }
-    
+
     // Implementation methods for the service
     private fun startApiServerWithParamsImpl(
         modelFile: String,
         templateType: String,
         contextSize: Int,
-        port: Int
+        port: Int,
     ): Boolean {
         if (isRunning.get()) {
             Log.w("WasmEdgeService", "API server is already running")
             return false
         }
-        
+
         return try {
             serverPort = port
             currentStatus = "Initializing..."
-            serviceJob = CoroutineScope(Dispatchers.IO).launch {
-                servicePid = runNativeLlamaApiServer(modelFile, templateType, contextSize, port)
-            }
+            serviceJob =
+                CoroutineScope(Dispatchers.IO).launch {
+                    servicePid = runNativeLlamaApiServer(modelFile, templateType, contextSize, port)
+                }
             isRunning.set(true)
             currentStatus = "Running on port $port"
             true
@@ -111,7 +100,7 @@ class WasmEdgeService : Service() {
         modelFile: String,
         templateType: String,
         contextSize: Int,
-        port: Int
+        port: Int,
     ): Int {
         copyFilesFromAssetsToInternal()
         val modelPath = File(File(filesDir, "llamaedge"), modelFile).absolutePath
@@ -140,26 +129,20 @@ class WasmEdgeService : Service() {
         isRunning.set(false)
         return true
     }
-    
-    private fun isApiServerRunningImpl(): Boolean {
-        return isRunning.get()
-    }
-    
-    private fun getApiServerStatusImpl(): String {
-        return currentStatus
-    }
-    
-    private fun getServerPortImpl(): Int {
-        return if (isRunning.get()) serverPort else -1
-    }
-    
+
+    private fun isApiServerRunningImpl(): Boolean = isRunning.get()
+
+    private fun getApiServerStatusImpl(): String = currentStatus
+
+    private fun getServerPortImpl(): Int = if (isRunning.get()) serverPort else -1
+
     private fun copyFilesFromAssetsToInternal() {
         val internalFilesDir = File(filesDir, "llamaedge")
-        
+
         if (!internalFilesDir.exists()) {
             internalFilesDir.mkdirs()
         }
-        
+
         try {
             // Copy all files recursively
             copyAssetFolder("llamaedge", internalFilesDir)
@@ -168,29 +151,32 @@ class WasmEdgeService : Service() {
             e.printStackTrace()
         }
     }
-    
-    private fun copyAssetFolder(assetPath: String, targetDir: File) {
+
+    private fun copyAssetFolder(
+        assetPath: String,
+        targetDir: File,
+    ) {
         val assetFiles = assets.list(assetPath) ?: return
-        
+
         assetFiles.forEach { fileName ->
             val assetFilePath = "$assetPath/$fileName"
             val targetFile = File(targetDir, fileName)
-            
+
             try {
                 // Try to open as file first
                 try {
                     val inputStream = assets.open(assetFilePath)
                     val outputStream = FileOutputStream(targetFile)
-                    
+
                     inputStream.copyTo(outputStream)
                     inputStream.close()
                     outputStream.close()
-                    
+
                     if (fileName == "wasmedge") {
                         targetFile.setExecutable(true, false)
                         Log.d("WasmEdgeService", "Set executable permission for: $fileName")
                     }
-                    
+
                     Log.d("WasmEdgeService", "Copied: $fileName (${targetFile.length()} bytes)")
                 } catch (ioException: Exception) {
                     // If opening as file fails, it's probably a directory
