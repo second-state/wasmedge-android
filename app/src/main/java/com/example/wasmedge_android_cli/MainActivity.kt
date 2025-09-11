@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewModelScope
 import com.example.wasmedge_android_cli.ui.theme.WasmedgeandroidcliTheme
 import kotlinx.coroutines.Job
@@ -52,8 +53,6 @@ class MainViewModel : ViewModel() {
     fun initializeService(connection: WasmEdgeServiceConnection) {
         serviceConnection = connection
     }
-
-    fun getServiceConnection(): WasmEdgeServiceConnection? = serviceConnection
 
     fun onServiceConnected() {
         _isServiceBound.value = true
@@ -128,6 +127,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        viewModel.addOutputText("MainActivity started\n")
+        lifecycleScope.launch {
+            // Wait for service to be bound
+            while (!viewModel.isServiceBound.value) {
+                delay(1000)
+            }
+            serviceConnection?.startApiServer()
+            viewModel.addOutputText("Service started\n")
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        viewModel.addOutputText("MainActivity stopped\n")
+        lifecycleScope.launch {
+            serviceConnection?.stopApiServer()
+            viewModel.addOutputText("Service stopped\n")
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         serviceConnection.unbindService()
@@ -172,44 +193,6 @@ fun MainContent(
                     text = "API Server: $serverStatus",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-            }
-        }
-
-        // Control Buttons
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Button(
-                onClick = {
-                    coroutineScope.launch {
-                        if (viewModel.getServiceConnection()?.startApiServer() == true) {
-                            viewModel.addOutputText("Starting API server via service...\n")
-                        } else {
-                            viewModel.addOutputText("Failed to start API server via service\n")
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                enabled = isServiceBound,
-            ) {
-                Text("Start Server")
-            }
-
-            Button(
-                onClick = {
-                    coroutineScope.launch {
-                        if (viewModel.getServiceConnection()?.stopApiServer() == true) {
-                            viewModel.addOutputText("Stopping API server...\n")
-                        } else {
-                            viewModel.addOutputText("Failed to stop API server\n")
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                enabled = isServiceBound,
-            ) {
-                Text("Stop Server")
             }
         }
 
