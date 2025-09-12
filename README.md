@@ -40,6 +40,16 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ## Run the App
 
-After launching the app, you can open the browser and navigate to `http://localhost:8080` to interact with the Chatbot UI.
+~~After launching the app, you can open the browser and navigate to `http://localhost:8080` to interact with the Chatbot UI.~~
 
-![Screen Recording](files/ScreenRecording.gif)
+The current version of the app will stop the service when the main activity is no longer visible.
+If you want to test the API server, you can use adb forward to forward the port and test it on your computer:
+
+```
+adb forward tcp:8080 tcp:8080
+
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"system", "content": "You are a helpful assistant."}, {"role":"user", "content": "Hi"}]}'
+```
