@@ -179,6 +179,10 @@ fun MainContent(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // Status Display
+        Text(
+            text = "Server Status",
+            style = MaterialTheme.typography.titleMedium,
+        )
         Card(
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -197,11 +201,12 @@ fun MainContent(
         }
 
         // Output display
+        Text(
+            text = "Logs",
+            style = MaterialTheme.typography.titleMedium,
+        )
         Card(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .padding(top = 12.dp),
+            modifier = Modifier.fillMaxSize(),
         ) {
             Text(
                 text = outputText,
